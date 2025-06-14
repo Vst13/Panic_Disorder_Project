@@ -1,0 +1,1321 @@
+---
+title: "Projekt nt. zespołu lęku napadowego"
+author: "Faustyna Smarzewska"
+format: 
+  html:
+    self-contained: true
+    toc: true
+    toc-title: "Spis treści"
+execute: 
+  echo: false
+  warning: false
+  message: false
+editor: visual
+---
+
+## Cel badania
+
+Celem badania jest utworzenie optymalnego pod względem miar statystycznych modelu do klasyfikacji pacjentów przy wykorzystaniu wybranych algorytmów uczenia maszynowego. Model służyć będzie do określenia na podstawie zebranych predyktorów, czy u danej osoby występuje zespół lęku napadowego (ang. panic disorder).
+
+## Opis zbioru badawczego
+
+Zbiór danych ,,Panic Disorder Detection Dataset’’ pochodzi ze strony Kaggle (link: <https://www.kaggle.com/datasets/muhammadshahidazeem/panic-disorder-detection-dataset/data).> Zawiera on 100 000 rekordów pacjentów w zbiorze zatytułowanym jako treningowy oraz 20 000 rekordów w zbiorze zatytułowanym jako testowy. W zbiorze znajduje się 17 zmiennych, z czego ostatnia dotyczy wystąpienia u pacjenta zespołu lęku napadowego. Dane zostały zebrane przez Muhammada Shahida Azeema, wykładowcę informatyki (ang. Computer Science) z Departamentu Szkolnictwa Wyższego Pendżab w Pakistanie (ang. Higher Education Department Punjab Pakistan), na podstawie analizy dokumentów z kliniki Ayeshy (ang. Ayesha Clinic).
+
+Przykładowe pierwsze wiersze zbioru danych są widoczne poniżej.
+
+```{r}
+setwd("C:/Users/faust/Desktop/Metody walidacji modeli statystycznych/Projekt/Panic_Disorder_Project")
+
+# Zbiór treningowy
+dane1 <- read.csv("panic_disorder_dataset_training.csv")
+# Zbiór testowy
+dane2 <- read.csv("panic_disorder_dataset_testing.csv")
+
+dane <- rbind(dane1, dane2) |> as.data.frame()
+
+library(knitr)
+library(kableExtra)
+
+dane |> head() |> kable() |> kable_styling()
+```
+
+Zbiór danych zawiera 17 zmiennych, którymi są:
+
+-   Participant.ID -- identyfikator pacjenta -- zmienna jakościowa, nominalna,
+
+-   Age -- wiek pacjenta -- zmienna ilościowa,
+
+-   Gender -- płeć pacjenta -- zmienna jakościowa, nominalna,
+
+-   Family.History -- informacja nt. tego, czy w przeszłości w rodzinie pacjenta obserwowane były zdarzenia lub czynniki wpływające na możliwość pojawienia się zespołu lęku napadowego (np. występowanie zespołu lęku napadowego u członka rodziny) -- zmienna jakościowa, binarna,
+
+-   Personal.History -- informacja nt. tego, czy w przeszłości u pacjenta obserwowane były zdarzenia lub czynniki wpływające na możliwość pojawienia się zespołu lęku napadowego -- zmienna jakościowa, binarna,
+
+-   Current.Stressors -- natężenie czynników stresogennych obecnie występujących u pacjenta -- zmienna jakościowa, nominalna,
+
+-   Symptoms -- symptomy występujące u pacjenta -- zmienna jakościowa, nominalna,
+
+-   Severity -- natężenie symptomów występujących u pacjenta -- zmienna jakościowa, nominalna,
+
+-   Impact.on.Life -- wpływ obserwowanych symptomów na codzienne życie pacjenta -- zmienna jakościowa, nominalna,
+
+-   Demographics -- informacja demograficzna na temat miejsca zamieszkania pacjenta -- zmienna jakościowa, nominalna,
+
+-   Medical.History -- historia medyczna pacjenta, tj. inne choroby fizyczne występujące u pacjenta -- zmienna jakościowa, nominalna,
+
+-   Psychiatric.History -- historia psychiatryczna pacjenta, tj. inne choroby psychiczne występujące u pacjenta -- zmienna jakościowa, nominalna,
+
+-   Substance.Use -- rodzaj zażywanych przez pacjenta substancji psychoaktywnych -- zmienna jakościowa, nominalna,
+
+-   Coping.Mechanisms -- mechanizmy i strategie wykorzystywane przez pacjenta do radzenia sobie ze stresem lub objawami zespołu lęku napadowego -- zmienna jakościowa, nominalna,
+
+-   Social.Support -- natężenie i jakość wsparcia społecznego otrzymywanego przez pacjenta (np. od przyjaciół, rodziny, grup wsparcia) -- zmienna jakościowa, nominalna,
+
+-   Lifestyle.Factors -- czynniki związane ze stylem życia pacjenta, które mogą wpływać na jego zdrowie psychiczne -- zmienna jakościowa, nominalna,
+
+-   Panic.Disorder.Diagnosis -- diagnoza pacjenta, tj. informacja o tym, czy u pacjenta występuje zespół lęku napadowego -- zmienna jakościowa, binarna.
+
+Zmienna zależna przeprowadzanego badania to zmienna Panic.Disorder.Diagnosis. Pozostałe zmienne stanowią zmienne niezależne (predyktory).
+
+Zauważamy, że zmienna Participant.ID, będąca numerem identyfikatora, jako jedyna nie wnosi żadnych informacji mogących mieć wpływ na stan psychiczny pacjenta, dlatego usuwamy ją ze zbioru danych.
+
+```{r}
+# Usunięcie kolumny Participant.ID
+library(dplyr)
+dane <- dane |> select(-Participant.ID)
+```
+
+Sprawdzamy, jak wiele jest w zbiorze danych braków.
+
+```{r}
+# Suma braków w każdej z kolumn
+liczba_brakow <- sapply(dane, function(x) sum(is.na(x)))
+
+df <- liczba_brakow |> as.data.frame()
+colnames(df) <- c("Liczba braków")
+
+df |> kable(caption = "Liczba braków w wybranej zmiennej") |> kable_styling()
+```
+
+W zbiorze nie występują braki danych, dlatego imputacja nie zostanie przeprowadzona.
+
+Następnie tworzymy wykresy liczebności klas zmiennych, aby przekonać się, jak duże dysproporcje panują w zbiorze danych.
+
+```{r, fig.width=14}
+# Histogram wieku pacjentów
+library(ggpubr)
+
+gghistogram(dane, x = "Age",
+          fill = "steelblue", color = "black",
+          title = "Histogram wieku pacjentów",
+          bins = 48)
+```
+
+Najmniejszy wiek pacjenta wynosi 18 lat, natomiast największy 65 lat, dlatego zdecydowaliśmy się na 48 słupków – po jednym dla każdego roku. Zauważamy, że histogram wieku pacjentów przypomina kształtem rozkład jednostajny.
+
+```{r, fig.width=14, fig.height=10}
+# Liczebności klas zmiennych
+dane_sort <- lapply(sapply(dane,table), sort)
+
+# Wykresy liczebności klas zmiennych
+plots <- NULL #lista rysunków
+
+for (i in 1:(length(colnames(dane))-2)){ #bez pierwszej i ostatniej zmiennej (wiek i diagnoza)
+zmienna_nazwa <- colnames(dane)[i+1]
+df <- dane_sort[zmienna_nazwa] |> as.data.frame()
+colnames(df) <- c("name", "freq")
+
+plots[[i]] <- ggbarplot(df, x = "name", y = "freq",
+          fill = "steelblue", color = "black", 
+          x.text.angle = 45,
+          xlab = "Klasa", ylab = "Liczebność",
+          title = sprintf("Wykres liczebności klas zmiennej %s", zmienna_nazwa),
+          label = T)
+}
+
+ggarrange(plotlist = plots[c(1:4)], nrow = 2, ncol = 2)
+```
+
+```{r, fig.width=14, fig.height=12}
+ggarrange(plotlist = plots[c(5:8)], nrow = 2, ncol = 2)
+```
+
+```{r, fig.width=14, fig.height=11}
+ggarrange(plotlist = plots[c(9:12)], nrow = 2, ncol = 2)
+```
+
+```{r, fig.width=14, fig.height=5}
+ggarrange(plotlist = plots[c(13:14)], nrow = 1, ncol = 2)
+```
+
+Przyglądając się liczebnościom klas zmiennych kategorycznych możemy powiedzieć, że są w miarę zbalansowane. Wśród zmiennych predykcyjnych nie występuje zmienna, która w większości składałaby się tylko z jednej klasy, dlatego nie ma potrzeby usuwać zmiennych z powodu braku ich informatywności (nieprzenoszenia istotnych dla modelu informacji).
+
+```{r, fig.width=12, fig.height=5}
+df_panic <- dane_sort["Panic.Disorder.Diagnosis"] |> as.data.frame()
+
+ggbarplot(df_panic, x = colnames(df_panic)[1], y = colnames(df_panic)[2],
+          fill = "steelblue", color = "black", 
+          x.text.angle = 45,
+          xlab = "Klasa", ylab = "Liczebność",
+          ylim = c(0,120000),
+          title = "Wykres liczebności klas zmiennej Panic.Disorder.Diagnosis",
+          label = T)
+```
+
+Zauważamy duże niezbalansowanie klas wynikowych. Potrzebny zatem będzie upsampling klasy mniejszościowej. Można też pokusić się o upsampling klasy mniejszościowej połączony z downsamplingiem klasy większościowej.
+
+## Wstępne przygotowanie danych
+
+### Konwersja typów
+
+```{r}
+#Zamiana typu zmiennych jakościowych na kategoryczne
+dane_factor <- dane |> 
+  select(-c(Age)) |> #wybranie zmiennych jakościowych
+  lapply(factor) |> #konwersja na typ kategoryczny
+  lapply(as.numeric) |> #zamiana na typ numeryczny dyskretny
+  lapply(factor) |> #konwersja na typ kategoryczny
+  as.data.frame() |>
+  mutate(Age = dane$Age, .before = Gender) #dodanie kolumny wieku pacjentów
+
+dane_factor |> head() |> kable() |> kable_styling()
+```
+
+Zmienne jakościowe, które są reprezentowane przez napisy złożone z liter (od Gender do Lifestyle.Factors), zamieniamy na format numeryczny, a następnie kategoryczny, aby każda klasa była reprezentowana przez kategorię wyrażoną numerem od 1 do liczby klas.
+
+Kategorie numeryczne są nadawane zgodnie z kolejnością alfabetyczną, dlatego kategorie zmiennych będziemy interpretowali w następujący sposób:
+
+-   Gender: 1 – Female, 2 – Male,
+
+-   Family.History: 1 – No, 2 – Yes,
+
+-   Personal.History: 1 – No, 2 – Yes,
+
+-   Current.Stressors: 1 – High, 2 – Low, 3 – Moderate,
+
+-   Symptoms: 1 – Chest pain, 2 – Dizziness, 3 – Fear of losing control, 4 – Panic attacks, 5 – Shortness of breath,
+
+-   Severity: 1 – Mild, 2 – Moderate, 3 – Severe,
+
+-   Impact.on.Life: 1 – Mild, 2 – Moderate, 3 – Significant,
+
+-   Demographics: 1 – Rural, 2 – Urban,
+
+-   Medical.History: 1 – Asthma, 2 – Diabetes, 3 – Heart Disease, 4 – None,
+
+-   Psychiatric.History: 1 – Anxiety disorder, 2 – Bipolar disorder, 3 – Depressive disorder, 4 – None,
+
+-   Substance.Use: 1 – Alcohol, 2 – Drugs, 3 – None,
+
+-   Coping.Mechanisms: 1 – Exercise, 2 – Meditation, 3 – Seeking Therapy, 4 – Socializing,
+
+-   Social.Support: 1 – High, 2 – Low, 3 – Moderate,
+
+-   Lifestyle.Factors: 1 – Diet, 2 – Exercise, 3 – Sleep quality.
+
+-   Panic.Disorder.Diagnosis: 1 – 0 (No), 2 – 1 (Yes).
+
+## Selekcja cech - Filter methods
+
+Jednym z głównych celów wstępnej analizy zbioru danych jest wyłonienie najbardziej istotnych predyktorów, które będą przydatne do budowy modelu. W selekcji cech ważny jest konsensus – potrzebne są nam odpowiednio długie wektory (liczba predyktorów), ale zmienne muszą coś przekazywać. Decydujemy się na selekcję cech za pomocą metod filtrowania (ang. Filter methods), które biorą pod uwagę zależności pomiędzy zmiennymi (test Chi-kwadrat, współczynnik Mutual Information), nie biorą jednak pod uwagę interakcji pomiędzy zmiennymi.
+
+### Zmienne kategoryczne
+
+#### Test Chi-kwadrat
+
+Test Chi-kwadrat wykorzystywany jest do sprawdzenia, czy różnice pomiędzy dwiema zmiennymi są istotne statystycznie.
+
+Z ciekawości założymy, że wiek można traktować jako zmienną jakościową przedziałową (numeryczna dyskretna potraktowana jako kategoryczna), aby zobaczyć, czy diagnoza może zależeć od kategorii wiekowych.
+
+```{r}
+data.frame(
+Gender = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Gender)$p.value,
+Age = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Age)$p.value,
+Family.History = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Family.History)$p.value,
+Personal.History = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Personal.History)$p.value,
+Current.Stressors = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Current.Stressors)$p.value,
+Symptoms = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Symptoms)$p.value,
+Severity = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Severity)$p.value,
+Impact.on.Life = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Impact.on.Life)$p.value,
+Demographics = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Demographics)$p.value,
+Medical.History = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Medical.History)$p.value,
+Psychiatric.History = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Psychiatric.History)$p.value,
+Substance.Use = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Substance.Use)$p.value,
+Coping.Mechanisms = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Coping.Mechanisms)$p.value,
+Social.Support = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Social.Support)$p.value,
+Lifestyle.Factors = chisq.test(dane_factor$Panic.Disorder.Diagnosis, dane_factor$Lifestyle.Factors)$p.value
+) |> 
+  t() |>#transpozycja
+  kable(caption = "Wyniki p_value z testu Chi-kwadrat") |> kable_styling()
+```
+
+Na podstawie uzyskanych wyników możemy stwierdzić, że nie ma podstaw do odrzucenia hipotezy zerowej o braku istotnej zależności pomiędzy zmienną określającą płeć pacjenta a jego diagnozą. Z tego powodu nie będziemy wykorzystywali tej zmiennej do budowy modelu (i w części dalszych testów).
+
+Ponadto zauważamy, że pozostałe wyniki p_value są mniejsze niż 0,05, co oznacza, że istnieje statystycznie istotna zależność pomiędzy pozostałymi zmiennymi predykcyjnymi a zmienną określającą diagnozę pacjenta. Z tego powodu zmienne te będziemy się starali zachować do budowy modelu.
+
+#### Tabele kontyngencji
+
+Dla każdej z istotnych zmiennych predykcyjnych można stworzyć tabelę kontyngencji ze zmienną zależną (diagnoza), aby zobaczyć, jak rozkładają się liczebności w poszczególnych klasach zmiennej niezależnej w zależności od klasy zmiennej zależnej.
+
+Ze względu na czytelność wyników używamy danych z kategoriami przed zamianą na typ numeryczny dyskretny (otrzymywane wyniki są takie same jak w przypadku kategorii zmienionych a numery).
+
+```{r}
+tab_family_hist <- table(dane$Panic.Disorder.Diagnosis, dane$Family.History)
+tab_personal_hist <- table(dane$Panic.Disorder.Diagnosis, dane$Personal.History)
+tab_stressors <- table(dane$Panic.Disorder.Diagnosis, dane$Current.Stressors)
+tab_symptoms <- table(dane$Panic.Disorder.Diagnosis, dane$Symptoms)
+tab_severity <- table(dane$Panic.Disorder.Diagnosis, dane$Severity)
+tab_impact <- table(dane$Panic.Disorder.Diagnosis, dane$Impact.on.Life)
+tab_demographic <- table(dane$Panic.Disorder.Diagnosis, dane$Demographics)
+tab_medical_hist <- table(dane$Panic.Disorder.Diagnosis, dane$Medical.History)
+tab_psychiatric_hist <- table(dane$Panic.Disorder.Diagnosis, dane$Psychiatric.History)
+tab_substance <- table(dane$Panic.Disorder.Diagnosis, dane$Substance.Use)
+tab_coping <- table(dane$Panic.Disorder.Diagnosis, dane$Coping.Mechanisms)
+tab_support <- table(dane$Panic.Disorder.Diagnosis, dane$Social.Support)
+tab_lifestyle <- table(dane$Panic.Disorder.Diagnosis, dane$Lifestyle.Factors)
+```
+
+Tabela kontyngencji dla zmiennej dotyczącej diagnozy i zmiennej dotyczącej trybu życia pacjenta prezentuje się następująco.
+
+```{r}
+# Tabela kontyngencji
+tab_lifestyle |> kable(caption = "Tabela kontyngencji Panic.Disorder.Diagnosis i Lifestyle.Factors") |> kable_styling()
+```
+
+Zauważamy, że żaden z pacjentów ze zdiagnozowanym zespołem lęku napadowego nie przynależy do klas 'Diet' oraz 'Exercise', co może wskazywać na to, że dieta i ćwiczenia fizyczne nie zostały przez specjalistę zaznaczone jako czynnik z codziennego trybu życia pacjenta, który może świadczyć o występowaniu zaburzenia. Zauważamy natomiast, że wszyscy z nich zostali przyporządkowani do klasy związanej z jakością snu, co może świadczyć o tym, że każdy z pacjentów skarżył się na jakość swojego snu. Z pobieżnie przeprowadzonego researchu wynika, że w zespole lęku napadowego występują nocne ataki paniki, które są w stanie drastycznie wpływać na jakość snu poprzez intensywny wzrost lęku podczas głębokiego snu – przez co osoba jest w stanie wybudzić się w stanie paniki, nie wiedząc dokładnie co się właściwie stało (<https://jutromedical.com/twoje-zdrowie/co-leczymy/atak-paniki-zespol-leku-napadowego>). Potwierdzałoby to wstępne uwagi wyciągnięte na podstawie tabeli kontyngencji. Natomiast aby być pewnym wyciąganych wniosków, warto byłoby skonsultować je z ekspertem dziedzinowym.
+
+```{r}
+# Tabela kontyngencji
+tab_coping |> kable(caption = "Tabela kontyngencji Panic.Disorder.Diagnosis i Coping.Mechanisms") |> kable_styling()
+```
+
+Zauważamy, że w tabeli kontyngencji diagnozy i sposobów radzenia sobie ze stresem lub lękiem korzystanie z medytacji, poszukiwanie terapii i socjalizowanie się z innymi ludźmi występuje mniej więcej tak samo często wśród badanych pacjentów ze zdiagnozowanym zespołem lęku napadowego, z czego najczęściej występuje poszukiwanie terapii. Ok. 3-krotnie rzadziej występuje natomiast uciekanie się przez tych pacjentów do ćwiczeń fizycznych. Wśród osób zdrowych zauważamy z kolei mniej więcej takie same proporcje w każdej z grup, co może świadczyć o tym, że każdy ma swój własny sposób na radzenie sobie z lękiem i stresem – i żaden z tych sposobów nie musi od razu świadczyć o tym, że ktoś posiada zaburzenia lękowe.
+
+#### Test V-Cramera
+
+Test V-Cramera bada, jak silna jest zależność pomiędzy zmiennymi kategorycznymi. W przypadku tego testu nie analizujemy kierunku zależności, a jedynie jej siłę.
+
+Gdybyśmy dodatkowo przyjęli, że wiek traktujemy jak zmienną kategoryczną (każdy rok pomiędzy 18 a 65 latami to oddzielna kategoria), otrzymalibyśmy takie zestawienie wyników testu V-Cramera.
+
+```{r}
+library(rcompanion)
+
+df <- data.frame(
+  Family.History = cramerV(tab_family_hist),
+  Personal.History = cramerV(tab_personal_hist),
+  Current.Stressors = cramerV(tab_stressors),
+  Symptoms = cramerV(tab_symptoms),
+  Severity = cramerV(tab_severity),
+  Impact.on.Life = cramerV(tab_impact),
+  Demographics = cramerV(tab_demographic),
+  Medical.History = cramerV(tab_medical_hist),
+  Psychiatric.History = cramerV(tab_psychiatric_hist),
+  Substance.Use = cramerV(tab_substance),
+  Coping.Mechanisms = cramerV(tab_coping),
+  Social.Support = cramerV(tab_support),
+  Lifestyle.Factors = cramerV(tab_lifestyle),
+  Age = cramerV(table(dane$Panic.Disorder.Diagnosis, dane$Age))
+) |> t() |> as.data.frame()
+
+df[order(df$`Cramer V`, decreasing = TRUE), , drop = F] |> kable() |> kable_styling() # drop=F do zachowania nazw wierszy
+```
+
+Z tabeli odczytujemy, że najsilniejsza spośród rozważanych zależność pomiędzy Panic.Disorder.Diagnosis a zmiennymi predykcyjnymi występuje dla zmiennej Lifestyle.Factors. Uzyskany wynik jest mniejszy niż 0,3, dlatego jest to zależność słaba. Pozostałe zmienne prezentują również zależność słabą (zakres od 0,1 do 0,3; zmienne: Current.Stressors, Impact.on.Life, Symptoms, Severity) lub bardzo słabą/jej brak (zakres od 0 do 0,1; pozostałe zmienne).
+
+Wynika z tego, że najmocniejszy wpływ na postawienie diagnozy mają odpowiednio: czynniki związane z trybem życia (jakość snu), natężenie czynników stresogennych, wpływ obserwowanych symptomów na życie pacjenta, symptomy, natężenie symptomów.
+
+Najsłabiej na diagnozę wpływają natomiast odpowiednio: wiek (gdyby interpretować go jak zmienną kategoryczną), rodzaj zażywanych przez pacjenta substancji psychoaktywnych i wsparcie społeczne.
+
+#### Wartości oczekiwane tabeli kontyngencji
+
+Wartość oczekiwana w tabeli kontyngencji to teoretyczna liczba obserwacji, jaką spodziewalibyśmy się zobaczyć w danej komórce tabeli, jeśli zmienne byłyby niezależne.
+
+Niech:
+
+$a_{ij}$ – wartość i-tego wiersza i j-tej kolumny tabeli kontyngencji,
+
+$E_{ij}$ – wartość oczekiwana dla i-tego wiersza i j-tej kolumny tabeli kontyngencji.
+
+Wartość $E_{ij}$ jest obliczana jako suma wiersza i-tego przemnożona przez sumę kolumny j-tej, a następnie podzielona przez sumę wszystkich wartości w tabeli, co prezentuje poniższy wzór:
+
+$E_{ij} = \frac{\sum\limits_m a_{im} \cdot \sum\limits_n a_{nj}}{\sum\limits_{n,m} a_{nm}}$
+
+Gdy wartości oczekiwane w niektórych komórkach są małe (mniejsze od 5), a więc gdy liczba obserwacji w analizowanych kategoriach jest mała, wówczas stosowany jest test Fishera. W naszym przypadku wszystkie wartości oczekiwane są wystarczająco duże, aby nie było potrzeby stosowania tego testu.
+
+Dla 3 zmiennych predykcyjnych o najsilniejszym wpływie na zmienną zależną (Lifestyle.Factors, Current.Stressors, Impact.on.Life) przeprowadzono analizę wartości oczekiwanych tabeli kontyngencji.
+
+```{r}
+tab_lifestyle |> kable(caption = "Tabela kontyngencji zmiennych Panic.Disorder.Diagnosis i Lifestyle.Factors") |> kable_styling()
+chisq.test(tab_lifestyle)$expected |> kable(caption = "Wartości oczekiwane tabeli kontyngencji zmiennych Panic.Disorder.Diagnosis i Lifestyle.Factors") |> kable_styling()
+```
+
+W przypadku zmiennej Lifestyle.Factors oczekiwano, że:
+
+-   w klasie 'Diet' zdiagnozowanych zostanie ok. 1705 osób – podczas gdy naprawdę zdiagnozowanych zostało 0,
+
+-   w klasie 'Exercise' zdiagnozowanych zostanie ok. 1720 osób – podczas gdy naprawdę zdiagnozowanych zostało 0,
+
+-   w klasie 'Sleep quality' zdiagnozowane zostaną ok. 1702 osoby – podczas gdy naprawdę zdiagnozowanych zostało 5126.
+
+Wyniki te pokazują, że w przypadku zespołu lęku napadowego jakość snu jest czynnikiem, który może być najbardziej związany ze zdrowiem psychicznym pacjenta. Dysproporcja wyników czysto hipotetycznie może być spowodowana również tym, że np. specjalista mógł zaznaczyć tylko jedną z kategorii, dlatego wybierał tę, która była wg niego najważniejsza – stąd być może brak przypadków pacjentów zdiagnozowanych z kategoriami 'Diet' i 'Exercise'.
+
+W przypadku osób, u których nie został zdiagnozowany zespół lęku napadowego, zauważyć można również różnice pomiędzy liczbami faktycznymi a oczekiwanymi. W przypadku klas 'Diet' i 'Exercise' utrzymują się one w granicach ok. 4% błędu względnego ((liczba faktyczna - liczba oczekiwana) / liczba_faktyczna), a w przypadku klasy 'Sleep quality' jest to błąd względny wynoszący ok. 10%.
+
+```{r, fig.width=10}
+library(ggplot2)
+
+# Procentowy udział diagnoz pozytywnych w klasach Lifestyle.Factors
+diagnosis_by_lifestyle <- dane |>
+  group_by(Lifestyle.Factors) |>
+  summarise(
+    total = n(),
+    diagnosed = sum(Panic.Disorder.Diagnosis == 1),
+    percent_diagnosed = 100 * diagnosed / total
+  )
+
+# Wykres
+ggplot(diagnosis_by_lifestyle, aes(x = Lifestyle.Factors, y = percent_diagnosed)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  ylab("Procent osób zdiagnozowanych pozytywnie") +
+  xlab("Klasa Lifestyle.Factors") +
+  ggtitle("Odsetek pacjentów zdiagnozowanych pozytywnie w klasach Lifestyle.Factors") +
+  theme_minimal() +
+  geom_text(aes(label = round(percent_diagnosed, 1)), vjust = -0.5, size = 4)
+```
+
+Na wykresie zauważyć można, że pacjenci z klasy 'Sleep quality' mają znacznie większe szanse na zdiagnozowanie u nich zespołu lęku napadowego niż pacjenci z klas 'Diet' i 'Exercise'.
+
+Reszty standaryzowane pozwalają szczegółowo określić, które kategorie najmocniej wpływają na wykrytą zależność pomiędzy zmiennymi kategorycznymi. Obliczane są za pomocą wzoru:
+
+$R_{ij} = \frac{a_{ij} - E_{ij}}{\sqrt{E_{ij}}},$
+
+gdzie $R_{ij}$ jest to reszta standaryzowana.
+
+```{r}
+chisq.test(tab_lifestyle)$residuals |> kable(caption = "Reszty standaryzowane  zmiennych Panic.Disorder.Diagnosis i Lifestyle.Factors") |> kable_styling()
+```
+
+Wartość bezwzględna w każdej z komórek w tabeli jest większa niż 3, dlatego w każdej z nich obserwujemy bardzo silną zależność.
+
+Dla 'Diet' i 'Exercise' związanych ze zmienną świadczącą o występowaniu lęku napadowego wartość ok. -41 świadczy o tym, że występuje tu zdecydowanie mniej przypadków pacjentów niż oczekiwano. Z kolei wartość ok. 83 w 'Sleep quality' w klasie 1 świadczy o tym, że występuje w tym miejscu zdecydowanie więcej przypadków pacjentów niż oczekiwano. Można powiedzieć, że jakość snu jest klasą, która spośród rozważanych ma najmocniejszy wpływ na postawienie diagnozy (wartość ok. 83).
+
+Duże reszty dodatnie świadczą o nadreprezentacji kategorii, a duże reszty ujemne -- o jej niedoreprezentacji. W tym przypadku moglibyśmy powiedzieć, że niedoreprezentowane są klasy 'Diet' i 'Exercise' w klasie 1 (diagnoza lęku napadowego) oraz 'Sleep quality' w klasie 0 (osoby zdrowe). Z kolei nadreprezentację najmocniej widać w 'Sleep quality' w klasie 1, a także w 'Diet' i 'Exercise' w klasie 0.
+
+```{r}
+tab_stressors |> kable(caption = "Tabela kontyngencji zmiennych Panic.Disorder.Diagnosis i Current.Stressors") |> kable_styling()
+chisq.test(tab_stressors)$expected |> kable(caption = "Wartości oczekiwane tabeli kontyngencji zmiennych Panic.Disorder.Diagnosis i Current.Stressors") |> kable_styling()
+```
+
+W przypadku zmiennej Current.Stressors oczekiwano, że:
+
+-   w klasie 'High' zdiagnozowanych zostanie ok. 1707 osób – podczas gdy naprawdę zdiagnozowanych zostało 3706,
+
+-   w klasie 'Low' zdiagnozowanych zostanie ok. 1714 osób – podczas gdy naprawdę zdiagnozowanych zostało 720,
+
+-   w klasie 'Moderate' zdiagnozowanych zostanie ok. 1705 osób – podczas gdy naprawdę zdiagnozowanych zostało 700.
+
+```{r, fig.width=10}
+# Procentowy udział diagnoz w klasach Current.Stressors
+diagnosis_by_stressors <- dane |>
+  group_by(Current.Stressors) |>
+  summarise(
+    total = n(),
+    diagnosed = sum(Panic.Disorder.Diagnosis == 1),
+    percent_diagnosed = 100 * diagnosed / total
+  )
+
+# Wykres
+ggplot(diagnosis_by_stressors, aes(x = Current.Stressors, y = percent_diagnosed)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  ylab("Procent osób zdiagnozowanych pozytywnie") +
+  xlab("Klasa Current.Stressors") +
+  ggtitle("Odsetek pacjentów zdiagnozowanych pozytywnie w klasach Current.Stressors") +
+  theme_minimal() +
+  geom_text(aes(label = round(percent_diagnosed, 1)), vjust = -0.5, size = 4)
+```
+
+Pacjenci z klasy 'High' mają znacznie większe szanse na zdiagnozowanie u nich zespołu lęku napadowego niż pacjenci z pozostałych dwóch klas.
+
+```{r}
+chisq.test(tab_stressors)$residuals |> kable(caption = "Reszty standaryzowane zmiennych Panic.Disorder.Diagnosis i Current.Stressors") |> kable_styling()
+```
+
+Analogicznie, zauważamy, że wszystkie wartości reszt standaryzowanych są większe od 3, dlatego każda z rozważanych klas silnie wpływa na zależność wykrytą pomiędzy rozważanymi zmiennymi kategorycznymi. Najsilniejszy wpływ widoczny jest w klasie 'High' dla zmiennej wynikowej równej 1. Oznacza to, że wysoki poziom czynników stresogennych najmocniej wpływa na postawienie diagnozy o występowaniu u pacjenta zespołu lęku napadowego spośród rozważanych.
+
+```{r}
+tab_impact |> kable(caption = "Tabela kontyngencji zmiennych Panic.Disorder.Diagnosis i Impact.on.Life") |> kable_styling()
+chisq.test(tab_impact)$expected |> kable(caption = "Wartości oczekiwane tabeli kontyngencji zmiennych Panic.Disorder.Diagnosis i Impact.on.Life") |> kable_styling()
+```
+
+W przypadku zmiennej Impact.on.Life oczekiwano, że:
+
+-   w klasie 'Mild' zdiagnozowanych zostanie ok. 1705 osób – podczas gdy naprawdę zdiagnozowanych zostało 951,
+
+-   w klasie 'Moderate' zdiagnozowanych zostanie ok. 1708 osób – podczas gdy naprawdę zdiagnozowanych zostało 1004,
+
+-   w klasie 'Significant' zdiagnozowanych zostanie ok. 1712 osób – podczas gdy naprawdę zdiagnozowanych zostało 3171.
+
+```{r, fig.width=10}
+# Procentowy udział diagnoz pozytywnych w klasach Impact.on.Life
+diagnosis_by_impact <- dane |>
+  group_by(Impact.on.Life) |>
+  summarise(
+    total = n(),
+    diagnosed = sum(Panic.Disorder.Diagnosis == 1),
+    percent_diagnosed = 100 * diagnosed / total
+  )
+
+# Wykres
+ggplot(diagnosis_by_impact, aes(x = Impact.on.Life, y = percent_diagnosed)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  ylab("Procent osób zdiagnozowanych pozytywnie") +
+  xlab("Klasa Impact.on.Life") +
+  ggtitle("Odsetek pacjentów zdiagnozowanych pozytywnie w klasach Impact.on.Life") +
+  theme_minimal() +
+  geom_text(aes(label = round(percent_diagnosed, 1)), vjust = -0.5, size = 4)
+```
+
+Pacjenci z klasy 'Significant' mają znacznie większe szanse na zdiagnozowanie u nich zespołu lęku napadowego niż pacjenci z pozostałych dwóch klas.
+
+```{r}
+chisq.test(tab_impact)$residuals |> kable(caption = "Reszty standaryzowane zmiennych Panic.Disorder.Diagnosis i Impact.on.Life") |> kable_styling()
+```
+
+W tym przypadku również wszystkie wartości reszt standaryzowanych są w wartości bezwzględnej większe niż 3, co świadczy o ich silnej zależności – jednakże występują tu wartości mniejsze niż poprzednio. Zauważamy, że najsilniejsza zależność jest tu obserwowana pomiędzy klasą 'Significant' a klasą zmiennej wynikowej równą 1. Można to interpretować w ten sposób, że znaczący wpływ obserwowanych symptomów na życie codzienne pacjenta może silnie wpływać na postawienie diagnozy o występowaniu u niego rozważanego zaburzenia.
+
+Analogicznie można sprawdzić jeszcze dwie pozostałe zmienne o słabej zależności ze zmienną wynikową wg testu V Cramera (Symptoms, Severity).
+
+```{r}
+chisq.test(tab_symptoms)$residuals |> kable(caption = "Reszty standaryzowane zmiennych Panic.Disorder.Diagnosis i Symptoms") |> kable_styling()
+```
+
+W przypadku symptomów zauważamy, że niektóre z nich nie przekraczają w wartości bezwzględnej wartości 2, co oznacza, że wystepujące prawdziwie wartości nie są uznawane za istotnie różne od wartości oczekiwanych. Oznacza to, że występowanie bólu w klatce piersiowej, zawrotów głowy, strachu przed utratą kontroli i duszności u pacjentów bez zaburzeń wpisuje się w normę i nie jest podstawą do stwierdzenia zespołu lęku napadowego.
+
+Zauważamy, że wśród pacjentów bez zaburzeń występuje o wiele mniej osób z atakami paniki, o czym świadczy wartość ok. -7,6. Z kolei wśród pacjentów z zaburzeniami występuje o wiele więcej osób z atakami paniki (wartość ok. 35,8) niż wynikałoby to z ich oczekiwanej liczby.
+
+```{r, fig.width=10}
+# Procentowy udział diagnoz pozytywnych w klasach Symptoms
+diagnosis_by_symptoms <- dane |>
+  group_by(Symptoms) |>
+  summarise(
+    total = n(),
+    diagnosed = sum(Panic.Disorder.Diagnosis == 1),
+    percent_diagnosed = 100 * diagnosed / total
+  )
+
+# Wykres
+ggplot(diagnosis_by_symptoms, aes(x = Symptoms, y = percent_diagnosed)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  ylab("Procent osób zdiagnozowanych pozytywnie") +
+  xlab("Klasa Symptoms") +
+  ggtitle("Odsetek pacjentów zdiagnozowanych pozytywnie w klasach Symptoms") +
+  theme_minimal() +
+  geom_text(aes(label = round(percent_diagnosed, 1)), vjust = -0.5, size = 4)
+```
+
+Pacjenci z klasy 'Panic attacks' mają zatem znacznie większe szanse na zdiagnozowanie u nich zespołu lęku napadowego niż pacjenci z pozostałych klas.
+
+```{r}
+chisq.test(tab_severity)$residuals |> kable(caption = "Reszty standaryzowane zmiennych Panic.Disorder.Diagnosis i Severity") |> kable_styling()
+```
+
+W przypadku natężenia symptomów występujących u pacjenta największy wpływ na diagnozę pozytywną ma poważne natężenie symptomów (wartość ok. 31).
+
+```{r, fig.width=10}
+# Procentowy udział diagnoz pozytywnych w klasach Impact.on.Life
+diagnosis_by_severity <- dane |>
+  group_by(Severity) |>
+  summarise(
+    total = n(),
+    diagnosed = sum(Panic.Disorder.Diagnosis == 1),
+    percent_diagnosed = 100 * diagnosed / total
+  )
+
+# Wykres
+ggplot(diagnosis_by_severity, aes(x = Severity, y = percent_diagnosed)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  ylab("Procent osób zdiagnozowanych pozytywnie") +
+  xlab("Klasa Severity") +
+  ggtitle("Odsetek pacjentów zdiagnozowanych pozytywnie w klasach Severity") +
+  theme_minimal() +
+  geom_text(aes(label = round(percent_diagnosed, 1)), vjust = -0.5, size = 4)
+```
+
+Pacjenci z klasy 'Severe' mają zatem znacznie większe szanse na zdiagnozowanie u nich zespołu lęku napadowego niż pacjenci z pozostałych klas.
+
+##### Wnioski
+
+Z przeprowadzonych rozważań można wyciągnąć wniosek, że na postawienie u pacjenta diagnozy pozytywnej w sprawie występowania u niego zespołu lęku napadowego najmocniejszy wpływ mają przede wszystkim: jakość snu pacjenta (wartość reszt standaryzowanych równa ok. 83), wysoki poziom czynników stresogennych (wartość ok. 48), znaczący wpływ obserwowanych symptomów na życie codzienne (wartość ok. 35), ataki paniki (wartość ok. 36) oraz poważne natężenie symptomów (wartość ok. 31). Zmienne, w których występują te klasy, wejdą zatem koniecznie do budowanych modeli.
+
+### Zmienne numeryczne
+
+#### Korelacja Pearsona i Spearmana
+
+Do sprawdzenia, czy w danych występuje związek pomiędzy zmiennymi, wykorzystujemy:
+
+-   współczynnik Pearsona – sprawdzenie występowania zależności liniowej, wrażliwy na wartości odstające,
+-   współczynnik Spearmana – sprawdzenie związku nieliniowego, monotonicznego (wraz ze wzrostem jednej cechy związany jest wzrost cechy drugiej, analogicznie dla spadków).
+
+Do tego zadania możemy wykorzystać oprócz zmiennych numerycznych (Age) również zmienne dychotomiczne, tj. binarne (Gender, Family.History, Personal.History, Demographics, Panic.Disorder.Diagnosis).
+
+```{r}
+numeric_variables <- dane_factor |> select(c("Age", "Gender", "Family.History", "Personal.History", "Demographics", "Panic.Disorder.Diagnosis"))
+
+numeric_variables <- numeric_variables |> mutate(across(c(Gender, Family.History, Personal.History, Demographics, Panic.Disorder.Diagnosis), as.numeric)) #zmienna dychotomiczna, mimo że kategoryczna, zamieniana na numeryczną, bo corr potrzebuje liczb
+```
+
+```{r, fig.width=10}
+library(ggcorrplot)
+
+correlation <- cor(numeric_variables, method = "pearson")
+
+p <- cor_pmat(correlation) #czy współczynnik jest istotny statystycznie
+
+ggcorrplot(correlation, lab=T, p.mat=p, title = "Macierz korelacji Pearsona") #przekreślone te współczynniki, które nie są istotne
+```
+
+```{r, fig.width=10}
+correlation <- cor(numeric_variables, method = "spearman")
+
+p <- cor_pmat(correlation) #czy współczynnik jest istotny statystycznie
+
+ggcorrplot(correlation, lab=T, p.mat=p, title = "Macierz korelacji Spearmana") #przekreślone te współczynniki, które nie są istotne
+```
+
+Zauważamy, że w żadnym z przypadków zarówno wartości korelacji Pearsona, jak i Spearmana, nie są istotne statystycznie. Oznacza to, że jest duże prawdopodobieństwo, że występujące zależności (np. pomiędzy Panic.Disorder.Diagnosis a Personal.History i Family.History) dotyczą tylko tej konkretnej próby i nie można ich uogólnić na szerszą populację. Brak jest zatem wystarczających dowodów na istnienie związku pomiędzy rozważanymi zmiennymi w całej populacji. Uznajemy, że zmienne nie są ze sobą skorelowane (nie są nadmiarowe), więc nie musimy wyrzucać żadnej z nich ze zbioru.
+
+#### Wizualizacje
+
+```{r, fig.width=10}
+# Wykres diagnozy wśród osób o danym wieku i pochodzeniu
+numeric_variables2 <- numeric_variables
+numeric_variables2$Panic.Disorder.Diagnosis <- as.factor(numeric_variables2$Panic.Disorder.Diagnosis)
+
+ggplot(numeric_variables2, aes(x = Age, y = Demographics, fill = Panic.Disorder.Diagnosis)) +
+  geom_jitter(shape = 21, color = "black", size = 3, width = 0, height = 0.1) +
+  scale_y_continuous(breaks = c(1, 2), labels = c("wiejskie", "miejskie")) +
+  scale_fill_manual(values = c("1" = "lightblue", "2" = "tomato"),
+                    labels = c("1" = "negatywna", "2" = "pozytywna")) +
+  labs(
+    x = "Wiek",
+    y = "Miejsce zamieszkania",
+    fill = "Diagnoza",
+    title = "Diagnoza w zależności od wieku i miejsca zamieszkania pacjenta"
+  ) +
+  theme_minimal()
+```
+
+Zauważamy, że zarówno wśród osób mieszkających na wsi, jak i w mieście, w różnych grupach wiekowych występują diagnozy pozytywne. Nie widać zauważalnych, mocno odstających od siebie grup (klastrów) ani obserwacji, które odstawałyby od pozostałych. Może to świadczyć o tym, że zaburzenia lękowe mogą dotknąć każdą osobę – bez względu na wiek i miejsce zamieszkania. Nie są one zatem domeną jedynie młodych ludzi z miast, ale mogą dotyczyć wszystkich jako społeczeństwa.
+
+```{r}
+# Wykres pudełkowy wieku pacjenta od diagnozy
+library(ggpubr)
+
+ggboxplot(numeric_variables2, 
+          x = "Panic.Disorder.Diagnosis", 
+          y = "Age",
+          color = "Panic.Disorder.Diagnosis", 
+          palette = "jco") +
+  labs(
+    title = "Wykres pudełkowy wieku pacjenta od diagnozy",
+    x = "Diagnoza",
+    y = "Wiek"
+  ) +
+  scale_x_discrete(labels = c("1" = "negatywna", "2" = "pozytywna")) +
+  theme(legend.position = "none") #Wyłączenie legendy
+```
+
+Na wykresie pudełkowym wieku pacjentów w zależności od postawionej diagnozy widać, że mediana wieku w obu grupach jest niemal taka sama. Aby sprawdzić, czy pacjenci z zaburzeniami i bez nich nie różnią się istotnie pod względem średniego wieku, przeprowadzimy test t-Studenta.
+
+#### Różnice w średnim wieku osób zdiagnozowanych i niezdiagnozowanych
+
+Gdybyśmy chcieli sprawdzić, czy istnieją istotne różnice w średnim wieku osób, które nie zostały zdiagnozowane (po badaniu okazało się, że nie mają rozważanych zaburzeń; czasami stosowane w tym raporcie określenie ,,diagnoza negatywna'') i tymi, które otrzymały diagnozę (występuje u nich zespół lęku napadowego; ,,diagnoza pozytywna''), potrzebowalibyśmy przeprowadzić test t-Studenta. Test ten wymaga jednak spełnienia założeń o normalności rozkładów, homogeniczności wariancji i niezależność obserwacji. W przypadku ich niespełnienia powinniśmy wykonać test Manna-Whitneya.
+
+##### Normalność rozkładów
+
+Najpierw rysujemy histogramy rozkładu wieku wśród pacjentów zdiagnozowanych bez oraz z zespołem lęku napadowego.
+
+```{r, fig.width=14}
+panic_0 <- filter(dane_factor, dane_factor$Panic.Disorder.Diagnosis == 1)
+panic_1 <- filter(dane_factor, dane_factor$Panic.Disorder.Diagnosis == 2)
+
+gghistogram(panic_0, x = "Age",
+          fill = "steelblue", color = "black",
+          title = "Histogram wieku pacjentów niezdiagnozowanych",
+          xlab = "Wiek", ylab = "Liczba pacjentów",
+          bins = 48)
+```
+
+Na histogramie zauważamy jednostajny rozkład wieku pacjentów niezaburzonych.
+
+```{r}
+gghistogram(panic_1, x = "Age",
+          fill = "steelblue", color = "black",
+          title = "Histogram wieku pacjentów zdiagnozowanych",
+          xlab = "Wiek", ylab = "Liczba pacjentów",
+          bins = 48)
+```
+
+Histogram wieku pacjentów zaburzonych również przypomina kształtem rozkład jednostajny lub bardzo powoli kształtujący się w stronę normalnego.
+
+Do sprawdzenia normalności rozkładu wykorzystujemy test Kołmogorowa-Smirnowa, ponieważ w naszym zbiorze znajduje się ok. 120 tys. obserwacji (ok. 115 tys. w grupie 0 i ok. 5 tys. w grupie 1), a test ten jest przeznaczony do działania na dużej liczbie obserwacji (w przeciwieństwie do testu Shapiro-Wilka, który działa dobrze przy max 50 obserwacjach).
+
+```{r}
+# Podział na grupy
+group_0 <- panic_0$Age
+group_1 <- panic_1$Age
+
+# Testy
+ks.test(group_1, "pnorm", mean(group_1, na.rm=T), sd(group_1, na.rm=T))
+ks.test(group_0, "pnorm", mean(group_0, na.rm=T), sd(group_0, na.rm=T))
+```
+
+W obu przypadkach p_value jest mniejsze od 0,05, dlatego odrzucamy hipotezę zerową na korzyść hipotezy alternatywnej, co oznacza, że w obu grupach rozkład wieku nie jest normalny.
+
+Jeżeli próba jest wystarczająco duża (liczba obserwacji większa niż 30) – a u nas jest (odpowiednio 115 tys. i 5 tys. obserwacji) – to założenie o normalności często jest pomijane w oparciu o Centralne Twierdzenie Graniczne. Rozkład średniej próby będzie dążył do rozkładu normalnego, nawet jeśli pierwotne dane nie są normalne – stąd, gdy testy statystyczne opierają się o wartości średnie, założenie o normalności może zostać pominięte. Tak też decydujemy się zrobić w tym przypadku.
+
+##### Homogeniczność wariancji
+
+Do sprawdzenia homogeniczności obserwacji wykorzystujemy test Levena.
+
+```{r}
+library(car)
+
+leveneTest(Age ~ Panic.Disorder.Diagnosis, data = dane_factor)
+```
+
+Osiągane p_val = 0,2418 nie przekracza wartości 0,05, dlatego uznajemy, że nie mamy podstaw do odrzucenia hipotezy zerowej o homogeniczności wariancji w obu grupach.
+
+##### Niezależność obserwacji
+
+Każdy pacjent jest traktowany jako niezależna jednostka. Zakładamy, że każda obserwacja dotyczy innego pacjenta i w zbiorze nie ma obserwacji przed i po wdrożeniu np. leczenia. Z tego powodu przyjmujemy, że niezależność obserwacji pomiędzy grupą osób zdiagnozowanych a niezdiagnozowanych jest spełniona.
+
+##### Test t-Studenta
+
+Przyjmujemy, że spełnione zostały wszystkie założenia testu t-Studenta (normalność rozkładów, homogeniczność wariancji, niezależność obserwacji), dlatego przechodzimy do jego przeprowadzenia.
+
+```{r}
+t.test(Age ~ Panic.Disorder.Diagnosis, data = dane_factor, var.equal = T)
+```
+
+Obliczone p_val = 0,9372 nie przekracza wartości 0,05, dlatego nie mamy podstaw do odrzucenia hipotezy zerowej o równości średnich w obu grupach. Oznacza to, że średni wiek osób zdiagnozowanych, jak i niezdiagnozowanych, jest w przybliżeniu taki sam. Z tego powodu można rozważyć wyrzucenie zmiennej Age z grupy zmiennych predykcyjnych.
+
+Z drugiej strony wyniki z testu Chi-kwadrat sugerowały występowanie zależności pomiędzy wiekiem a diagnozą. Kierując się poradą dr Majerka, że jeśli celem analizy jest zbudowanie jak najlepszego modelu w celach predykcyjnych, a nie odkrycie zależności pomiędzy zmiennymi i wybranie tylko tych istotnych, to lepiej jest umieścić w modelu więcej zmiennych niż mniej – ponieważ model jest w stanie wówczas odkryć zależności, których my nie wyłapiemy i może dzięki temu nauczyć się lepiej. Zatem ostatecznie decydujemy się na umieszczenie zmiennej Age w budowanych modelach.
+
+### Mutual information
+
+Mutual Information (wzajemna informacja) to miara statystyczna opisująca jak wiele informacji o jednej zmiennej zawiera druga zmienna. Wykorzystywana jest ona m.in. w selekcji cech (feature selection) oraz analizie zależności między zmiennymi.
+
+```{r, fig.width=10}
+library(infotheo)
+
+# Pusta macierz
+n <- ncol(dane_factor)
+mi_matrix <- matrix(0, nrow = n, ncol = n)
+colnames(mi_matrix) <- rownames(mi_matrix) <- colnames(dane_factor)
+
+# Wypełnienie macierzy wartościami współczynnika MI
+for (i in 1:n) {
+  for (j in 1:n) {
+    mi_matrix[i, j] <- mutinformation(dane_factor[[i]], dane_factor[[j]])
+  }
+}
+
+# Heatmap
+library(pheatmap)
+
+pheatmap(mi_matrix, 
+         main = "Mapa cieplna wzajemnej informacji",
+         color = colorRampPalette(c("white", "red"))(50),
+         cluster_rows = TRUE,
+         cluster_cols = TRUE)
+```
+
+Na mapie cieplnej wzajemnej informacji (ang. Mutual Information heatmap) białe pola oznaczają MI = 0, a więc brak przenoszenia wspólnej informacji. Zauważamy, że jedynym miejscem odznaczającym się na rysunku jest główna przekątna (dana zmienna przenosi swoje własne informacje). Wszystkie rozważane zmienne nie przenoszą między sobą wspólnych informacji, dlatego możemy powiedzieć, że są od siebie niezależne.
+
+## Przygotowanie danych
+
+### Wybranie zmiennych
+
+Tak jak zdecydowaliśmy podczas selekcji cech – ze zbioru zmiennych predykcyjnych wyrzucamy zmienną dotyczącą płci pacjenta, a pozostałe zostawiamy do budowy modeli.
+
+```{r}
+dane_selected <- dane_factor |> select(-c(Gender))
+```
+
+### Usunięcie duplikatów
+
+Przed przystąpieniem do budowy modeli należy sprawdzić, czy wśród danych nie pojawiają się duplikaty obserwacji. Możliwe jest, że wielu pacjentów posiada te same cechy i diagnozy, więc jeżeli okazałoby się, że część z nich trafiła zarówno do zbioru treningowego, jak i testowego – mielibyśmy problem wycieku danych.
+
+```{r}
+# Duplikaty - Przed selekcją cech
+df <- data.frame(duplikaty = sum(duplicated(dane)),
+                 unikalne = nrow(unique(dane)),
+                 wszystkie = nrow(dane))
+
+colnames(df) <- c("Liczba zduplikowanych obserwacji", "Liczba unikalnych obserwacji", "Liczba wszystkich obserwacji")
+
+df |> t() |> kable(caption="Przed selekcją cech") |> kable_styling()
+
+# Duplikaty - Po selekcji cech
+df <- data.frame(duplikaty = sum(duplicated(dane_selected)),
+                 unikalne = nrow(unique(dane_selected)),
+                 wszystkie = nrow(dane_selected))
+
+colnames(df) <- c("Liczba zduplikowanych obserwacji", "Liczba unikalnych obserwacji", "Liczba wszystkich obserwacji")
+
+df |> t() |> kable(caption="Po selekcji cech") |> kable_styling()
+```
+
+Usunięcie zmiennej Gender zwiększyło liczbę duplikatów, jednakże ich liczba po selekcji cech nadal jest mała i wynosi zaledwie 0,08 % całego zbioru danych, dlatego decydujemy się na ich usunięcie. Proces ten działa w ten sposób, że jeśli występują 2 takie same obserwacje, to po wyrzuceniu duplikatów zostanie tylko 1 instancja takiej obserwacji.
+
+```{r}
+dane_unique <- distinct(dane_selected)
+```
+
+### Podział na zbiór uczący, walidacyjny i testowy
+
+Następnie dzielimy zbiór na uczący, walidacyjny i testowy. Modele będziemy uczyć na zbiorze train, walidować na zbiorze val, a na samym końcu sprawdzać jakość utworzonych ostatecznie modeli na zbiorze testowym. Zastrzegamy ponadto, że każdy model będzie mógł zostać zwalidowany na zbiorze testowym tylko raz, aby uniknąć sytuacji, gdy model zacznie uczyć się obserwacji ze zbioru testowego, na którym będzie tworzył wielokrotnie predykcje.
+
+Dokonujemy podziału ze stratyfikacją względem klas zmiennej wynikowej. Zbiór został podzielony na zbiory train - val - test w stosunku 70% - 15% - 15%. Konkretne wartości liczbowe obserwacji w każdej z klas zostały przedstawione w tabeli.
+
+```{r}
+# Podział ze stratyfikacją względem klas zmiennej wynikowej
+
+library(tidymodels)
+
+set.seed(2025)
+data_split <- initial_validation_split(dane_unique, prop = c(0.7, 0.15), strata = Panic.Disorder.Diagnosis) # prop - proporcje do zbioru treningowego i walidacyjnego
+train_set <- training(data_split)
+val_set <- validation(data_split)
+test_set <- testing(data_split)
+
+df <- data.frame(all = nrow(dane_unique),
+                 train = nrow(train_set), 
+                 val = nrow(val_set), 
+                 test = nrow(test_set))
+colnames(df) <- c("Cały zbiór", "Zbiór treningowy", "Zbiór walidacyjny", "Zbiór testowy")
+df |> t() |> kable(caption = "Liczebność obserwacji w zbiorach") |> kable_styling()
+```
+
+### Balansowanie zmiennej wynikowej
+
+Sprawdzamy rozkład klas zmiennej wynikowej w zbiorze treningowym poprzez wizualizację na wykresie słupkowym.
+
+```{r, fig.width=10}
+df_panic <- train_set$Panic.Disorder.Diagnosis |> table() |> as.data.frame()
+colnames(df_panic) <- c("Diagnoza", "Liczebność")
+df_panic$Diagnoza <- c("negatywna", "pozytywna")
+
+ggbarplot(df_panic, x = "Diagnoza", y = "Liczebność",
+          fill = "steelblue", color = "black", 
+          x.text.angle = 45,
+          xlab = "Klasa", ylab = "Liczebność",
+          title = "Wykres liczebności klas zmiennej Panic.Disorder.Diagnosis",
+          label = T)
+```
+
+Kategorie zmiennej zależnej w zbiorze treningowym są niezbalansowane, co prezentuje poniższy wykres słupkowy. Może to prowadzić do problemów podczas ewaluacji modeli (np. bardzo dużej wartości metryki Accuarcy, która wcale nie będzie świadczyła o dobrym dopasowaniu modelu do danych). W tej sytuacji można wykorzystać kilka różnych podejść – można np. połączyć oversampling klasy mniejszościowej (tworzenie obserwacji syntetycznych) z undersamplingiem klasy większościowej lub wykonać jedynie undersampling klasy większościowej poprzez wylosowanie z ok. 80 tys. obserwacji 3597 obserwacji. Po konsultacji z dr Majerkiem decydujemy się na wypróbowanie sposobu jedynie z undersamplingiem klasy większościowej, ponieważ kilka tysięcy obserwacji wybranych losowo powinno zachować najważniejsze informacje na temat rozważanej grupy (próbka powinna być reprezentatywna).
+
+```{r, fig.width=10}
+# Undersampling klasy większościowej
+set.seed(2025)
+
+train_balanced <- train_set |>
+  group_by(Panic.Disorder.Diagnosis) |>
+  sample_n(size = 3597) |> #losowe wybranie obserwacji z klasy większościowej
+  ungroup()
+
+df_panic <- train_balanced$Panic.Disorder.Diagnosis |> table() |> as.data.frame()
+colnames(df_panic) <- c("Diagnoza", "Liczebność")
+df_panic$Diagnoza <- c("negatywna", "pozytywna")
+
+ggbarplot(df_panic, x = "Diagnoza", y = "Liczebność",
+          fill = "steelblue", color = "black", 
+          x.text.angle = 45,
+          xlab = "Klasa", ylab = "Liczebność",
+          title = "Wykres liczebności klas zmiennej Panic.Disorder.Diagnosis",
+          label = T)
+```
+
+### Transformacje zmiennych
+
+Do uczenia modeli takich jak sieci neuronowe, KNN i SVM potrzebne są predyktory przeskalowane i wyśrodkowane. Modele drzewiaste, takie jak las losowy i boosting, nie wymagają takich transformacji. Ze względu jednak na pojawiające się w trakcie tworzenia modeli błędy, a także zaletę uproszczenia w postaci ujednolicenia przepływów pracy, decydujemy się na zastosowanie tak zmodyfikowanego zbioru treningowego również do ich uczenia.
+
+Do modelu stosujemy normalizację zmiennych numerycznych, aby miały one średnią równą 0 oraz odchylenie standardowe równe 1. Dokonujemy jej na zbiorach treningowym, walidacyjnym i testowym z wykorzystaniem parametrów uzyskanych na zbiorze treningowym, aby uniknąć wycieku danych.
+
+Wykonujemy również one-hot-encoding zmiennych kategorycznych, dzięki czemu dane te będą przygotowane do zastosowania ich w budowie modeli uczenia maszynowego.
+
+```{r}
+library(themis)
+
+normalized_recipe <- recipe(Panic.Disorder.Diagnosis ~ ., data=train_balanced) |>
+  step_normalize(all_numeric_predictors()) |> #standaryzacja zmiennych numerycznych
+  step_dummy(all_nominal_predictors()) #one-hot-encoding zmiennych kategorycznych
+  
+preparation <- prep(normalized_recipe, training = train_balanced)
+
+train_baked <- bake(preparation, new_data = NULL)
+val_baked <- bake(preparation, new_data = val_set)
+test_baked <- bake(preparation, new_data = test_set)
+
+# lapply(train_baked, table)
+```
+
+Jednym z zagrożeń, które może pojawić się podczas próbkowania (u nas: undersamplingu) jest słaba reprezentacja kategorii w zmiennych czynnikowych, mogąca przekształcić się w występowanie predyktorów o zerowej wariancji, które są bezużyteczne dla modeli. Zauważamy jednak, że w zbiorze treningowym nie ma zmiennych, które po zastosowaniu one-hot-encodingu miałyby zerową wariancję.
+
+### Foldy do walidacji krzyżowej
+
+Tworzymy foldy 10-krotnej walidacji krzyżowej z 5 powtórzeniami do wykorzystania podczas tuningu hiperparametrów modeli.
+
+```{r}
+# Foldy - normalizacja i one-hot-encoding 
+set.seed(2025)
+cv_normalized <- vfold_cv(train_balanced, strata = Panic.Disorder.Diagnosis, v = 10, repeats = 5)
+```
+
+## Metryki
+
+### Accuracy
+
+Określa zdolność modelu do przewidywania prawdziwych wyników.
+
+$$\frac{TP+TN}{TP+FP+TN+FN} = \frac{dobrze\_sklasyfikowani\_pacjenci}{wszyscy\_pacjenci} $$
+
+### Precision
+
+Określa zdolność modelu do weryfikowania prawdziwie pozytywnych przypadków.
+
+$$\frac{TP}{TP+FP} = \frac{dobrze\_sklasyfikowani\_zaburzeni}{wszyscy\_sklasyfikowani\_jako\_zaburzeni} $$
+
+### Recall (Sensitivity)
+
+Całkowita zdolność modelu do rozpoznawania/wykrywania przypadków pozytywnych.
+
+$$\frac{TP}{TP+FN} = \frac{dobrze\_sklasyfikowani\_zaburzeni}{wszyscy\_prawdziwi\_zaburzeni} $$
+
+### F1
+
+Ogólna zdolność do klasyfikacji modelu, tzn. do weryfikowania prawdziwie pozytywnych przypadków (TP), minimalizowania fałszywie negatywnych przypadków (FN) i minimalizowania pomyłek.
+
+Jest to średnia harmoniczna ze zmiennych Precision i Recall, a więc metryka, która równomiernie uwzględnia dwie wspomniane metryki. Dzięki temu za pomocą jednej metryki możemy badać jednocześnie na ile model rozpoznaje pozytywne przypadki oraz na ile precyzyjnie weryfikuje prawdziwość przypadków sklasyfikowanych jako pozytywne.
+
+$$F1 = 2 \cdot \frac{Recall \cdot Precision}{Recall + Precision}$$
+
+### Specificity
+
+Zdolność modelu do rozpoznawania/wykrywania przypadków negatywnych.
+
+$$\frac{TN}{FP+TN} = \frac{dobrze\_sklasyfikowani\_niezaburzeni}{wszyscy\_prawdziwi\_niezaburzeni} $$
+
+### Area Under Curve (AUC)
+
+Krzywa ROC jest wykresem przedstawiającym skuteczność modelu klasyfikacyjnego. Na osi OY wykresu opisane jest TPR (True Positive Rate), czyli inaczej Recall (Sensitivity), zaś oś OX przedstawia 1 - FPR (False Positive Rate), znane pod nazwą Specificity. Pole pod krzywą ROC nazywamy Area Under Curve (AUC). W idealnym przypadku wartość tej metryki wynosi 1.
+
+```{r}
+# Funkcja do wyciągnięcia metryk
+library(pROC)
+library(caret)
+
+utworz_tab_metryk <- function(actual, pred){ #cmat - confucion matrix z mode="everything"
+  cmat <- confusionMatrix(actual, pred)
+  
+  acc <- cmat[[3]][1] |> as.numeric() |> round(digits=4) #Accuracy
+  pre <- cmat[[4]][5] |> as.numeric() |> round(digits=4) #Precision
+  rec <- cmat[[4]][1] |> as.numeric() |> round(digits=4) #Recall
+  f1 <- cmat[[4]][7] |> as.numeric() |> round(digits=4) #F1
+  spec <- cmat[[4]][2] |> as.numeric() |> round(digits=4) #Specificity
+  roc_object <- roc(actual, as.numeric(pred))
+  auc <- roc_object$auc[1] #AUC
+  
+  data.frame(Accuracy = acc, Precision = pre, Recall = rec, F1=f1, Specificity=spec, AUC = auc) |> t() |> kable(caption="Tabela metryk") |> kable_styling()
+}
+```
+
+## Określenie modeli
+
+### Wybór modeli
+
+Podczas wyboru modeli kierujemy się również tym, aby nie wymagały rozkładu normalnego zmiennych numerycznych, ponieważ zmienna Age w naszych danych charakteryzuje się rozkładem jednostajnym. Nie użyjemy zatem regresji liniowej ani regresji logistycznej. Zamiast tego wykorzystamy modele, które radzą sobie ze zmiennymi o innych rozkładach niż normalny, czyli modele takie jak:
+
+-   las losowy – model drzewiasty oparty na zbiorze drzew decyzyjnych; decyzja o zaklasyfikowaniu obserwacji do danej klasy podejmowana jest poprzez wybranie mody z wyników uzyskiwanych ze zbudowanych drzew; algorytm niewymagający transformacji danych do swojego działania; poprawia dokładność i zmniejsza przeuczenie w porównaniu do pojedynczego drzewa losowego,
+
+-   XGBoost – szybki i wydajny algorytm oparty na wzmacnianiu gradientu (ang. gradient boosting); model drzewiasty, w którym każde kolejne drzewo poprawia błędy poprzednich modeli (uczy się wyjaśniać wariancję, która do tej pory nie została wyjaśniona przez poprzednie modele)
+
+-   KNN (k-Nearest Neighbors) – model klasyfikujący obserwację na podstawie mody klas obserwacji, które są jej k-najbliższymi sąsiadami w przestrzeni cech,
+
+-   SVM (Support Vector Machine) – model oparty na poszukiwaniu najlepszej granicy oddzielającej klasy, maksymalizujący margines pomiędzy klasami w przestrzeni cech,
+
+-   sieć neuronowa – model zbudowany z warstw neuronów przetwarzających dane; dzięki swojej architekturze jest zdolny do uczenia się złożonych wzorców.
+
+```{r}
+library(rules)
+library(baguette)
+library(xgboost)
+library(kknn)
+library(kernlab)
+library(nnet)
+
+# Las losowy (RF)
+rf_spec <- rand_forest(mtry = tune(), min_n = tune(), trees = 1000) |>
+  set_engine("ranger") |>
+  set_mode("classification")
+
+# XGBoost
+xgb_spec <- boost_tree(tree_depth = tune(), 
+                       learn_rate = tune(), 
+                       loss_reduction = tune(), 
+                       min_n = tune(), 
+                       sample_size = tune(), 
+                       trees = tune()) |>
+  set_engine("xgboost") |>
+  set_mode("classification")
+
+# KNN
+knn_spec <- nearest_neighbor(neighbors = tune(), 
+                             dist_power = tune(), 
+                             weight_func = tune()) |>
+  set_engine("kknn") |>
+  set_mode("classification")
+
+# SVM
+svm_spec <- svm_rbf(cost = tune(), 
+                    rbf_sigma = tune()) |>
+  set_engine("kernlab") |>
+  set_mode("classification")
+
+# Sieć neuronowa (NNET)
+nnet_spec <- mlp(hidden_units = tune(), 
+                 penalty = tune(), 
+                 epochs = tune()) |> 
+  set_engine("nnet", MaxNWts = 2600) |>
+  set_mode("classification")
+```
+
+Hiperparametry ustawione do tuningowania w modelach to:
+
+-   RF:\
+    - mtry – liczba predyktorów losowo dobieranych podczas każdego podziału drzewa losowego,\
+    - min_n – minimalna liczebność obserwacji w węźle potrzebna do dokonania kolejnego podziału,\
+    - trees – liczba drzew losowych wykorzystywanych w modelu,
+
+-   XGBoost:\
+    - tree_depth – maksymalna głębokość drzewa (maksymalna liczba podziałów w drzewie), \
+    - learn_rate – tempo uczenia z jakim algorytm boostingu dokonuje adaptacji pomiędzy iteracjami, \
+    - loss_reduction – redukcja funkcji straty wymagana do tworzenia kolejnych podziałów, \
+    - min_n – minimalna liczebność obserwacji w węźle potrzebna do dokonania kolejnego podziału,\
+    - sample_size – liczba lub proporcja obserwacji, która jest wykorzystywana do uczenia (oddzielne losowanie dla każdej iteracji),\
+    - trees – liczba drzew losowych wykorzystywanych w modelu,
+
+-   KNN:\
+    - neighbors – liczba sąsiadów (k), \
+    - dist_power – parametr wykorzystywany do obliczania odległości Minkowskiego, \
+    - weight_func – typ funkcji jądrowej wykorzystywanej do ważenia odległości pomiędzy obserwacjami,
+
+-   SVM:\
+    - cost – koszt dokonania niepoprawnej predykcji,\
+    - rbf_sigma – radialna funkcja bazowa,
+
+-   NNET:\
+    - hidden_units – liczba neuronów w warstwie ukrytej, \
+    - penalty – wartość kary dla dużych wag w modelu, które mogą powodować overfitting wagi, \
+    - epochs – liczba iteracji uczenia modelu z wybraną kombinacją wartości hiperparametrów.
+
+Zgodnie z podręcznikiem do przedmiotu Metody walidacji modeli statystycznych w warstwie sieci neuronowej powinno znajdować się max 27 jednostek ukrytych (rozdz. 13, podrozdz. 13.2 o tytule ,,Określenie modeli''), stąd dokonujemy modyfikacji zakresu parametrów, które użyjemy następnie w przepływie pracy dla sieci neuronowej.
+
+```{r}
+nnet_param <- nnet_spec |> 
+              extract_parameter_set_dials() |>
+              update(hidden_units = hidden_units(c(1, 27))) #ustawienie zakresu warstw ukrytych od 1 do 27
+```
+
+### Przepływ pracy
+
+Do modeli KNN, SVM i sieci neuronowej wymagane są przepływy pracy wykorzystujące normalizację zmiennej numerycznej. Jak wspomniano poprzednio, modele drzewiaste nie potrzebują takich modyfikacji. Ze względu jednak na pojawiające się błędy w stosowaniu przepisu bez modyfikacji oraz przepisu z interakcjami między zmiennymi, ostatecznie decydujemy się na wykorzystanie jednego uniwersalnego przepływu pracy do wszystkich wybranych modeli. Rozwiązanie te jest dozwolone (normalizacja zmiennej numerycznej nie będzie wpływać nagatywnie na działanie modeli drzewiastych) i działa. Ponadto, przed dalszymi etapami pracy, aktualizujemy również wspomniane wcześniej parametry sieci neuronowej.
+
+```{r}
+workflow_normalized <- workflow_set(
+      preproc = list(normalized = normalized_recipe), #przepis preprocessingu (transformacje)
+      models = list(RF = rf_spec, #wybrane modele
+                    boosting = xgb_spec,
+                    KNN = knn_spec,
+                    SVM = svm_spec,
+                    neural_network = nnet_spec)) |>
+  #Dodanie obiektu parametrów sieci neuronowej
+  option_add(param_info = nnet_param, id = "normalized_neural_network") |>
+  #Usunięcie nazw 'simple_', 'normalized_' dla lepszego wyglądu
+  mutate(wflow_id = gsub("normalized_", "", wflow_id))
+
+workflow_normalized
+```
+
+## Tuning modeli
+
+Aby przyspieszyć otrzymanie wyników będziemy korzystać z większej liczby rdzeni do prowadzenia obliczeń. Aktualnie na urządzeniu dostępnych jest 8 rdzeni CPU, z których wykorzystywany jest 1, dlatego liczbę tę zmieniamy na 6.
+
+Aby znaleźć najlepsze kombinacje wartości tuningowanych hiperparametrów, dokonujemy przeszukania ich przestrzeni w oparciu o siatkę. Łącznie do sprawdzenia przeznaczamy 20 kombinacji.
+
+### Metoda wyścigów
+
+Podczas tuningowania zdarza się, że wybrane zostają wartości hiperparametrów, które w kontekście zadania nie są użyteczne. Aby zaoszczędzić czas, wykorzystywana jest metoda wyścigów, która służy do wczesnego odrzucania nieodpowiednich kombinacji hiperparametrów. W metodzie tej proces strojenia ocenia wszystkie modele na początkowym podzbiorze foldów. W oparciu o wartości metryk wydajności, niektóre zestawy parametrów nie są brane pod uwagę w kolejnych etapach dostrajania, co przyspiesza odnalezienie najlepszej kombinacji poszukiwanych wartości. Metoda ta jest wydajna, znacznie przyspiesza obliczenia, a ponadto wyniki z niej uzyskiwane są zazwyczaj bardzo zbliżone do tych uzyskiwanych przy tradycyjnym tuningu na siatce parametrów, dlatego decydujemy się na jej wykorzystanie.
+
+Metodą wyścigów przeprowadzamy tuning 20 kombinacji hiperparametrów modeli. Modele te są uczone na foldach (podzbiorach zbioru treningowego), dlatego wyniki uzyskane z ich walidacji na foldach nie są jeszcze ostatecznymi wartościami metryk uzyskanych z modelu, a jedynie wskazują na to, który zestaw hiperparametrów jest najbardziej obiecujący/optymalny do wykorzystania przy uczeniu modelu na całym zbiorze treningowym.
+
+```{r}
+library(doParallel)
+# parallel::detectCores()
+cl <- makeCluster(6)
+registerDoParallel(cl)
+
+# Metoda wyścigów
+
+library(finetune)
+
+race_ctrl <-
+   control_race(
+      save_pred = TRUE,
+      parallel_over = "everything",
+      save_workflow = TRUE
+   )
+
+# race_results_grid20 <-
+#    workflow_normalized |>
+#    workflow_map(
+#       "tune_race_anova",
+#       seed = 2025,
+#       resamples = cv_normalized,
+#       grid = 20,
+#       control = race_ctrl
+#    )
+#    
+# saveRDS(race_results_grid20, "race_results_grid20.RDS")
+```
+
+W tuningu rozważaliśmy 20 różnych wartości hiperparametrów wybieranych dla każdego z 5 typów modeli. W każdym z tych przypadków została przeprowadzona 10-krotna walidacja krzyżowa z 5 powtórzeniami. Łącznie podejście wyścigowe oszacowało zatem metryki 5000 modeli.
+
+```{r}
+race_results_grid20 <- readRDS("race_results_grid20.RDS")
+race_results_grid20
+
+# Wyniki metryk dla najlepszych kombinacji hiperparametrów
+race_results_grid20 |> 
+  rank_results() |> 
+  filter(.metric == "accuracy") |>
+  select(wflow_id, .config, accuracy = mean, std_err, rank)
+
+race_results_grid20 |> 
+  rank_results() |> 
+  filter(.metric == "roc_auc") |>
+  select(wflow_id, .config, roc_auc = mean, std_err, rank)
+```
+
+Najlepsze wyniki metryk AUC oraz Accuracy uzyskane w metodzie wyścigów wskazują na to, że najlepiej z zadaniem klasyfikacji radzi sobie model sieci neuronowej oraz boosting.
+
+```{r}
+autoplot(race_results_grid20,
+         rank_metric = "accuracy",
+         metric = "accuracy",
+         select_best = TRUE) +
+  geom_text(aes(y = mean - 0.005, label = wflow_id), angle = 90, hjust = 1) +
+  theme(legend.position = "none") +
+  ylim(c(0.872, 1.0)) +
+  ylab("Accuracy") +
+  ggtitle("Metoda wyścigowa - Accuracy w zależności od modelu")
+```
+
+Na rysunku przedstawione są oszacowane wartości metryki Accuracy i przybliżone przedziały ufności uzyskane dla najlepszej konfiguracji modelu przy pomocy metody wyścigowej. Zauważamy, że w przypadku metryki Accuracy najlepszym modelem okazuje się być sieć neuronowa, której średnia wartość rozważanej metryki jest istotnie większa od średnich z pozostałych modeli.
+
+```{r, fig.height=10}
+autoplot(race_results_grid20,
+         rank_metric = "roc_auc",
+         metric = "roc_auc",
+         select_best = TRUE) +
+  geom_text(aes(y = mean - 0.001, label = wflow_id), angle = 90, hjust = 1) +
+  theme(legend.position = "none") +
+  ylim(c(0.982, 1.0)) +
+  ylab("AUC") +
+  ggtitle("Metoda wyścigowa - AUC w zależności od modelu")
+```
+
+Na wykresie uzyskiwanych w metodzie wyścigów wartości metryki AUC w zależności od modelu zauważamy, że najgorzej w porównaniu do innych modeli wypadł model KNN. Zauważamy również, że sieć neuronowa oraz boosting uzyskują najlepsze wyniki metryki AUC, a uzyskiwana przez nie średnia jest istotnie większa od pozostałych średnich (,,wąsy'' określone za pomocą wartości odchylenia standardowego dla średnich pozostałych modeli nie nachodzą na ,,dolne wąsy'' odchyleń standardowych dla najlepszych uzyskiwanych średnich).
+
+Jedyne, czego możemy się obawiać, to zjawiska overfittingu, jeśli modele zbyt dobrze nauczyły się zbioru treningowego, tracąc na zdolnościach generalizacyjnych. Będziemy to jednak sprawdzać w kolejnej części raportu, podczas walidacji modeli na zbiorze walidacyjnym oraz podczas ostatecznej walidacji na zbiorze testowym.
+
+## Ewaluacja modeli
+
+Przeprowadzamy ewaluację jakości dopasowania modelu do danych na zbiorze walidacyjnym. Jeśli wyniki nie będą zadowalające, dokonamy modyfikacji modeli (np. dokonamy sprawdzenia większej liczby wartości hiperparametrów podczas tuningu), a następnie ponownie przeprowadzimy walidację na zbiorze walidacyjnym. Jeżeli wyniki będą nas satysfakcjonować, zwalidujemy model na zbiorze testowym.
+
+Najpierw sprawdzamy, jak prezentują się najlepsze kombinacje hiperparametrów uzyskane w tuningu dla dwóch najlepszych modeli: sieci neuronowej i boostingu (XGBoost).
+
+```{r}
+# Najlepsze dobrane hiperparametry - sieć neuronowa
+best_results_nnet <- race_results_grid20 |>
+  extract_workflow_set_result("neural_network") |> 
+  select_best(metric = "roc_auc")
+
+best_results_nnet
+
+# Najlepsze dobrane hiperparametry - XGBoost
+best_results_boost <- race_results_grid20 |>
+  extract_workflow_set_result("boosting") |>
+  select_best(metric = "roc_auc")
+
+best_results_boost
+```
+
+### Ewaluacja na zbiorze walidacyjnym
+
+W tym celu ewaluacji najlepszych modeli na zbiorze walidacyjnym z zapisu tuningu wyciągamy przepływy pracy dotyczące wybranych najlepszych modeli i finalizujemy je poprzez umieszczenie w nich najlepszych uzyskanych kombinacji hiperparametrów. Za pomocą funkcji fit() trenujemy model na zbiorze treningowym, a następnie dokonujemy jego ewaluacji na zbiorze walidacyjnym za pomocą funkcji predict(). Wyniki wizualizujemy w postaci macierzy pomyłek.
+
+#### Sieć neuronowa
+
+```{r}
+library(doParallel)
+cl <- makeCluster(6)
+registerDoParallel(cl)
+
+# Trening z najlepszymi hiperparametrami - sieć neuronowa
+
+# trained_model_nnet <- race_results_grid20 |>
+#   extract_workflow("neural_network") |>
+#   finalize_workflow(best_results_nnet) |>
+#   fit(data = train_set) # zbiór oryginalny z initial_validation_split
+
+#saveRDS(trained_model_nnet, "trained_model_nnet.rds")
+trained_model_nnet <- readRDS("trained_model_nnet.rds")
+
+# Predykcja na zbiorze walidacyjnym
+val_pred <- predict(trained_model_nnet, val_set) |> bind_cols(val_set)
+
+# Ewaluacja na zbiorze walidacyjnym
+utworz_tab_metryk(val_pred$Panic.Disorder.Diagnosis, val_pred$.pred_class)
+```
+
+Otrzymane metryki świadczą o dobrym dopasowaniu modelu sieci neuronowej do danych na zbiorze walidacyjnym. Accuracy równe 1 oznacza, że 100% obserwacji zostało rozpoznanych prawidłowo. Precision równie 1 oznacza, że wszystkie osoby, które zostały przez model rozpoznane jako zaburzone, naprawdę nimi były. Recall równe 1 oznacza, że wszystkie osoby z zespołem lęku napadowego zostały rozpoznane. Specificity równe 1 oznacza, że wszystkie osoby niezaburzone również zostały poprawnie rozpoznane. AUC równe 1 świadczy o tym, że model jest skuteczny i działa niezawodnie.
+
+```{r}
+# Funkcja do tworzenia macierzy pomyłek
+rysuj_cmat <- function(set_pred, color){
+  
+  cmat <- confusionMatrix(set_pred$.pred_class, set_pred$Panic.Disorder.Diagnosis)
+  
+  cmat$table |> as.data.frame() |> 
+    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = Freq), size = 6) +
+    scale_fill_gradient(low = "white", high = color) +
+    labs(
+      title = "Macierz pomyłek diagnozy",
+      x = "Prawdziwa",
+      y = "Przewidywana",
+      fill = "Liczba pacjentów"
+    ) +
+    theme_minimal() +
+    #Zmiana kolejności klas
+    scale_x_discrete(limits = c("1", "2"),
+                      labels = c("0 (negatywna)", "1 (pozytywna)")) +
+    scale_y_discrete(limits = c("2", "1"),
+                      labels = c("1 (pozytywna)", "0 (negatywna)"))
+}
+```
+
+```{r, fig.width=10}
+# Macierz pomyłek
+rysuj_cmat(val_pred, "darkred")
+```
+
+Macierz pomyłek również prezentuje idealne dopasowanie modelu do danych. Oznacza to, że mimo iż wykonaliśmy undersampling zbioru treningowego z 83 931 obserwacji do 7 194 obserwacji (odpowiednio po 3 597 obserwacji w klasie 0 i klasie 1 zmiennej wynikowej), model był w stanie wychwycić najważniejsze informacje różniące osoby zaburzone od niezaburzonych i na ich podstawie prawidłowo zdiagnozował 17 985 pacjentów ze zbioru walidacyjnego. Jest to satysfakcjonujący wynik, dlatego modelu nie poddajemy dalszym modyfikacjom i w następnych krokach sprawdzimy metryki uzyskiwane z niego na zbiorze testowym.
+
+#### XGBoost
+
+```{r}
+library(doParallel)
+cl <- makeCluster(6)
+registerDoParallel(cl)
+
+# Trening z najlepszymi hiperparametrami - XGBoost
+
+# trained_model_boost <- race_results_grid20 |>
+#   extract_workflow("boosting") |>
+#   finalize_workflow(best_results_boost) |>
+#   fit(data = train_set) # zbiór oryginalny z initial_validation_split
+
+#saveRDS(trained_model_boost, "trained_model_boost.rds")
+trained_model_boost <- readRDS("trained_model_boost.rds")
+
+# Predykcja na zbiorze walidacyjnym
+val_pred <- predict(trained_model_boost, val_set) |> bind_cols(val_set)
+
+# Ewaluacja na zbiorze walidacyjnym
+utworz_tab_metryk(val_pred$Panic.Disorder.Diagnosis, val_pred$.pred_class)
+```
+
+Stuningowany model XGBoost również prezentuje 100% dokładności detekcji, o czym świadczą przedstawione w tabeli metryki oraz macierz pomyłek.
+
+```{r, fig.width=10}
+# Macierz pomyłek
+rysuj_cmat(val_pred, "darkred")
+```
+
+Otrzymane wnioski są analogiczne z uzyskanymi z analizy wyników metryk sieci neuronowej. Modelu nie poddajemy dalszym modyfikacjom i przeznaczamy go do ostatecznej walidacji na zbiorze testowym.
+
+### Ewaluacja na zbiorze testowym
+
+Analogicznie dokonujemy ewaluacji rozważanych modeli na zbiorze testowym.
+
+#### Sieć neuronowa
+
+```{r, fig.width=10}
+# Predykcja na zbiorze testowym
+test_pred <- predict(trained_model_nnet, test_set) |> bind_cols(test_set)
+
+# Ewaluacja na zbiorze walidacyjnym
+utworz_tab_metryk(test_pred$Panic.Disorder.Diagnosis, test_pred$.pred_class)
+
+# Macierz pomyłek
+rysuj_cmat(test_pred, "steelblue")
+```
+
+Stuningowany model sieci neuronowej prezentuje 100% poprawności detekcji na zbiorze testowym.
+
+#### XGBoost
+
+```{r, fig.width=10}
+# Predykcja na zbiorze testowym
+test_pred <- predict(trained_model_boost, test_set) |> bind_cols(test_set)
+
+# Ewaluacja na zbiorze walidacyjnym
+utworz_tab_metryk(test_pred$Panic.Disorder.Diagnosis, test_pred$.pred_class)
+
+# Macierz pomyłek
+rysuj_cmat(test_pred, "steelblue")
+```
+
+Stuningowany model XGBoost również prezentuje 100% dokładności detekcji na zbiorze testowym.
+
+## Wnioski
+
+Wyniki uzyskane z modeli okazały się być bardzo satysfakcjonujące. Zarówno model sieci neuronowej, jak też model XGBoost uzyskały 100% dokładności zarówno na zbiorze walidacyjnym, jak też testowym.
+
+```{r}
+train_tab <- train_balanced$Panic.Disorder.Diagnosis |> table()
+val_tab <- val_set$Panic.Disorder.Diagnosis |> table()
+test_tab <- test_set$Panic.Disorder.Diagnosis |> table()
+
+df <- data.frame(
+  base_train = sprintf("%.2f%%", as.numeric(train_tab[1] / sum(train_tab) * 100)),
+  base_val = sprintf("%.2f%%", round(as.numeric(val_tab[1] / sum(val_tab) * 100), digits = 2)),
+  base_test = sprintf("%.2f%%", round(as.numeric(test_tab[1] / sum(test_tab) * 100), digits = 2)),
+  actual = sprintf("%.2f%%", round(as.numeric(confusionMatrix(test_pred$Panic.Disorder.Diagnosis, test_pred$.pred_class)[[3]][1] * 100), digits = 2))
+)
+colnames(df) <- c("Model bazowy - zbiór treningowy", "Model bazowy - zbiór walidacyjny", "Model bazowy - zbiór testowy", "Model XGBoost/sieć neuronowa (po tuningu)")
+df |> t() |> kable(caption="Porównanie metrki Accuracy dla modeli bazowych i modeli po tuningu") |> kable_styling()
+```
+
+Są to tym bardziej satysfakcjonujące wyniki, gdy weźmiemy pod uwagę, że model bazowy, tj. taki, który wszystkich określałby jako niezaburzonych (klasa 0), na zbiorze treningowym uzyskałby tylko 50% dokładności (metryka Accuracy), na zbiorze walidacyjnym – 95,77%, a na zbiorze testowym – 95,75%.
+
+Przeprowadzenie selekcji cech, dokonanie transformacji danych, paralelizacja obliczeń oraz wykorzystanie metody wyścigów do tuningu modeli okazały się być czterema najważniejszymi elementami, które wpłynęły na to, że modele zostały nauczone szybko, sprawnie i tak dobrze.
+
+## Dalsze kierunki rozwoju
+
+W każdym projekcie znajduje się przestrzeń na wprowadzenie ulepszeń. W tym projekcie warto byłoby w przyszłości pozyskać dane z innych klinik zajmujących się diagnostyką i leczeniem zespołu lęku napadowego, aby móc generalizować wyniki na szerszą populację. Pozwoliłoby to na sprawdzenie, czy zespół lęku napadowego objawia się podobnie w różnych miejsach na świecie i czy utworzone modele byłyby przydatne w diagnostyce. Gdyby wyniki okazały się dalekie od satysfakcjonujących, można byłoby powtórzyć proces modelowania w celu utworzenia modeli diagnostycznych dla każdego kraju lub kliniki oddzielnie.
