@@ -25,12 +25,11 @@ W każdym projekcie znajduje się przestrzeń na wprowadzenie ulepszeń. W tym p
 
 ## Informacje dodatkowe
 W repozytorium znajdują się pliki:
-
-Panic_Disorder_Project.html - plik html w formie raportu, obejmujący tekst i wizualizacje, bez kodu,
-Panic_Disorder_Project.qmd - plik z kodem projektu,
-race_results_grid20.RDS - wyniki uzyskane po tuningu modeli metodą wyścigów,
-trained_model_boost.rds - najlepszy model XGBoost (uzyskany po treningu z najlepszymi wartościami hiperparametrów wybranymi podczas tuningu),
-trained_model_nnet.rds - najlepszy model sieci neuronowej (uzyskany po treningu z najlepszymi wartościami hiperparametrów wybranymi podczas tuningu),
-Panic_Project_dataset_info_Polish - informacje o zbiorze danych w języku polskim.
+- Panic_Disorder_Project.html - plik html w formie raportu, obejmujący tekst i wizualizacje, bez kodu,
+- Panic_Disorder_Project.qmd - plik z kodem projektu,
+- race_results_grid20.RDS - wyniki uzyskane po tuningu modeli metodą wyścigów,
+- trained_model_boost.rds - najlepszy model XGBoost (uzyskany po treningu z najlepszymi wartościami hiperparametrów wybranymi podczas tuningu),
+- trained_model_nnet.rds - najlepszy model sieci neuronowej (uzyskany po treningu z najlepszymi wartościami hiperparametrów wybranymi podczas tuningu),
+- Panic_Project_dataset_info_Polish - informacje o zbiorze danych w języku polskim.
 ____________________________________________________________________________________________________________________________
 Autorem projektu jest Faustyna Smarzewska, studentka kierunku IAD II st. Politechniki Lubelskiej w roku akademickim 2024/25.
